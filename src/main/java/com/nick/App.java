@@ -1,7 +1,9 @@
 package com.nick;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import oracle.bpel.services.bpm.common.IBPMContext;
 import oracle.bpel.services.common.util.XMLUtil;
@@ -13,6 +15,8 @@ import oracle.bpel.services.workflow.repos.Predicate;
 import oracle.bpel.services.workflow.task.ITaskService;
 import oracle.bpel.services.workflow.task.model.Task;
 import oracle.bpel.services.workflow.verification.IWorkflowContext;
+import oracle.bpm.project.SequenceFlowImpl;
+import oracle.bpm.project.model.ProjectObject;
 import oracle.bpm.services.client.IBPMServiceClient;
 import oracle.bpm.services.instancemanagement.IInstanceManagementService;
 import oracle.bpm.services.instancemanagement.model.IActivityInfo;
@@ -25,10 +29,12 @@ import oracle.bpm.services.instancemanagement.model.impl.ProcessComment;
 import oracle.bpm.services.instancemanagement.model.impl.alterflow.ActivityInfo;
 import oracle.bpm.services.instancemanagement.model.impl.alterflow.FlowChangeItem;
 import oracle.bpm.services.instancemanagement.model.impl.alterflow.GrabInstanceRequest;
+import oracle.bpm.services.instancequery.IAuditInstance;
 import oracle.bpm.services.instancequery.IColumnConstants;
 import oracle.bpm.services.instancequery.IInstanceQueryInput;
 import oracle.bpm.services.instancequery.IInstanceQueryService;
 import oracle.bpm.services.instancequery.impl.InstanceQueryInput;
+import oracle.bpm.services.internal.processmodel.model.IProcessModelPackage;
 import oracle.bpm.services.processmetadata.IProcessMetadataService;
 import oracle.bpm.services.processmetadata.ProcessMetadataSummary;
 
@@ -62,13 +68,159 @@ public class App {
 		// testModifyingProcessInstanceState("80001");
 		// testProcessMetadataService("aa");
 
-		testSkipping(2);
-		
+		// testSkipping(2);
+//		 testaaa();
+		// testFindingOutNewActivities();
 		testGrab();
 	}
 
+	private void testaaa() {
+		try {
+			String instanceId = "140002";
+
+			// get the BPMServiceClient
+			IBPMServiceClient bpmServiceClient = Fixture.getBPMServiceClient();
+
+			// authenticate to the BPM engine
+			IBPMContext bpmContext = Fixture.getIBPMContext(
+					ConnectionConstants.USERNAME, ConnectionConstants.PASSWORD);
+
+			// get details of the process instance
+			IInstanceQueryService instanceQueryService = bpmServiceClient
+					.getInstanceQueryService();
+			IProcessInstance processInstance = instanceQueryService
+					.getProcessInstance(bpmContext, instanceId);
+
+			List<IAuditInstance> auditInstances = bpmServiceClient
+					.getInstanceQueryService().queryAuditInstanceByProcessId(
+							bpmContext, instanceId);
+
+			Set<IAuditInstance> aaa = new HashSet<IAuditInstance>(
+					auditInstances);
+
+			for (IAuditInstance a1 : aaa) {
+
+				if (a1.getActivityName().equals("USER_TASK")) {
+					System.out.println(a1.getActivityId() + " ("
+							+ a1.getLabel() + ")");
+				}
+
+			}
+
+		} catch (Exception ex) {
+
+		}
+	}
+
+	private void testFindingOutNewActivities() {
+		try {
+
+			String instanceId = "140002";
+
+			// get the BPMServiceClient
+			IBPMServiceClient bpmServiceClient = Fixture.getBPMServiceClient();
+
+			// authenticate to the BPM engine
+			IBPMContext bpmContext = Fixture.getIBPMContext(
+					ConnectionConstants.USERNAME, ConnectionConstants.PASSWORD);
+
+			// get details of the process instance
+			IInstanceQueryService instanceQueryService = bpmServiceClient
+					.getInstanceQueryService();
+			IProcessInstance processInstance = instanceQueryService
+					.getProcessInstance(bpmContext, instanceId);
+
+			if (processInstance == null) {
+				System.out.println("Could not find instance, aborting");
+				System.exit(0);
+			}
+
+			// get details of the process (not a specific instance of it,
+			// but the actual process definition itself)
+			// WARNING WARNING WARNING
+			// The ProcessModelService is an UNDOCUMENTED API - this means
+			// that it could (and probably will) change in some future
+			// release - you SHOULD NOT build any code that relies on it,
+			// unless you understand and accept the risks of using an
+			// undocumented API.
+			IProcessModelPackage processModelPackage = bpmServiceClient
+					.getProcessModelService().getProcessModel(bpmContext,
+							processInstance.getSca().getCompositeDN(),
+							processInstance.getSca().getComponentName());
+
+			// get a list of the audit events that have occurred in this
+			// instance
+			List<IAuditInstance> auditInstances = bpmServiceClient
+					.getInstanceQueryService().queryAuditInstanceByProcessId(
+							bpmContext, instanceId);
+
+			// work out which activities have not finished
+			List<IAuditInstance> started = new ArrayList<IAuditInstance>();
+			for (IAuditInstance a1 : auditInstances) {
+				if (a1.getAuditInstanceType().compareTo("START") == 0) {
+					// ingore the process instance itself, we only care
+					// about tasks in the process
+					if (a1.getActivityName().compareTo("PROCESS") != 0) {
+						started.add(a1);
+					}
+				}
+			}
+
+			for (IAuditInstance a2 : auditInstances) {
+				if (a2.getAuditInstanceType().compareTo("END") == 0) {
+					for (int i = 0; i < started.size(); i++) {
+						if (a2.getActivityId().compareTo(
+								started.get(i).getActivityId()) == 0) {
+							started.remove(i);
+						}
+					}
+				}
+			}
+			System.out
+					.println("\n\nLooks like the following have started but not ended:");
+			for (IAuditInstance s : started) {
+				System.out.println(s.getActivityId() + "\nwhich is a "
+						+ s.getActivityName() + "\ncalled " + s.getLabel()
+						+ "\n");
+			}
+
+			// now we need to find what is after these activities...
+			// WARNING WARNING WARNING
+			// The ProcessModel, ProcessObject, etc. are UNDOCUMENTED APIs -
+			// this means that they could (and probably will) change
+			// in some future release - you SHOULD NOT build any code
+			// that relies on them, unless you understand and
+			// accept the risks of using undocumented APIs.
+			List<ProjectObject> nextActivities = new ArrayList<ProjectObject>();
+			for (ProjectObject po : processModelPackage.getProcessModel()
+					.getChildren()) {
+				if (po instanceof SequenceFlowImpl) {
+					for (IAuditInstance s2 : started) {
+						if (((SequenceFlowImpl) po).getSource().getId()
+								.compareTo(s2.getActivityId()) == 0) {
+							nextActivities.add(po);
+						}
+					}
+				}
+			}
+
+			System.out.println("\n\nLooks like the next activities are:");
+			for (ProjectObject po2 : nextActivities) {
+				System.out.println(((SequenceFlowImpl) po2).getTarget().getId()
+						+ "\nwhich is a "
+						+ ((SequenceFlowImpl) po2).getTarget().getBpmnType()
+						+ "\ncalled "
+						+ ((SequenceFlowImpl) po2).getTarget()
+								.getDefaultLabel() + "\n");
+			}
+
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
 	private void testGrab() {
-		String processInstanceId = "";
+		String processInstanceId = "140002";
 
 		try {
 			IBPMServiceClient bpmServiceClient = Fixture.getBPMServiceClient();
@@ -87,10 +239,17 @@ public class App {
 
 			IGrabInstanceRequest grabInstanceRequest = new GrabInstanceRequest();
 			grabInstanceRequest.setProcessInstance(processInstance);
+
 			// change flow
 
-			IActivityInfo sourceActivity = ActivityInfo.create("UserTask", "");
-			IActivityInfo targetActivity = ActivityInfo.create("UserTask1", "");
+			String activityId = processInstance.getSystemAttributes()
+					.getActivityId();
+
+			IActivityInfo sourceActivity = ActivityInfo.create(activityId,
+					"ccc");
+			IActivityInfo targetActivity = ActivityInfo.create(
+					"ABSTRACT_ACTIVITY4213107856266", "bbb");
+			
 			IFlowChangeItem flowChangeItem = FlowChangeItem.create(
 					sourceActivity, targetActivity);
 			List<IFlowChangeItem> items = new ArrayList<IFlowChangeItem>();
@@ -99,6 +258,10 @@ public class App {
 
 			IGrabInstanceResponse grabInstance = instanceManagementService
 					.grabInstance(bpmContext, grabInstanceRequest);
+
+			if (grabInstance.getInstanceSummary().isSuccessfullyUpdated()) {
+				System.out.println("Success!");
+			}
 
 		} catch (Exception ex) {
 			System.out.println("error!");
