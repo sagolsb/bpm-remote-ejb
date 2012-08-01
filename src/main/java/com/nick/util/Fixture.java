@@ -3,6 +3,8 @@ package com.nick.util;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.nick.constant.ConnectionConstants;
+
 import oracle.bpel.services.bpm.common.IBPMContext;
 import oracle.bpel.services.workflow.client.IWorkflowServiceClient;
 import oracle.bpel.services.workflow.client.IWorkflowServiceClientConstants;
@@ -12,7 +14,8 @@ import oracle.bpm.services.client.IBPMServiceClient;
 
 public class Fixture {
 
-	private static String url = "t3://172.16.90.55:7001";
+	private static String url = "t3://" + ConnectionConstants.IP_ADDRESS
+			+ ":7001";
 
 	public static BPMServiceClientFactory getBPMServiceClientFactory() {
 		Map<IWorkflowServiceClientConstants.CONNECTION_PROPERTY, String> properties = new HashMap<IWorkflowServiceClientConstants.CONNECTION_PROPERTY, String>();

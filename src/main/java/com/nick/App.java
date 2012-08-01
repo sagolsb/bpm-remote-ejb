@@ -13,10 +13,18 @@ import oracle.bpel.services.workflow.repos.Predicate;
 import oracle.bpel.services.workflow.task.ITaskService;
 import oracle.bpel.services.workflow.task.model.Task;
 import oracle.bpel.services.workflow.verification.IWorkflowContext;
+import oracle.bpm.services.client.IBPMServiceClient;
 import oracle.bpm.services.instancemanagement.IInstanceManagementService;
+import oracle.bpm.services.instancemanagement.model.IActivityInfo;
+import oracle.bpm.services.instancemanagement.model.IFlowChangeItem;
+import oracle.bpm.services.instancemanagement.model.IGrabInstanceRequest;
+import oracle.bpm.services.instancemanagement.model.IGrabInstanceResponse;
 import oracle.bpm.services.instancemanagement.model.IProcessComment;
 import oracle.bpm.services.instancemanagement.model.IProcessInstance;
 import oracle.bpm.services.instancemanagement.model.impl.ProcessComment;
+import oracle.bpm.services.instancemanagement.model.impl.alterflow.ActivityInfo;
+import oracle.bpm.services.instancemanagement.model.impl.alterflow.FlowChangeItem;
+import oracle.bpm.services.instancemanagement.model.impl.alterflow.GrabInstanceRequest;
 import oracle.bpm.services.instancequery.IColumnConstants;
 import oracle.bpm.services.instancequery.IInstanceQueryInput;
 import oracle.bpm.services.instancequery.IInstanceQueryService;
@@ -41,6 +49,8 @@ public class App {
 
 	public final static String TASK_NS = "http://xmlns.oracle.com/bpel/workflow/task";
 
+	private final int taskNo = 200380;
+
 	public static void main(String[] args) {
 		App app = new App();
 		app.blah();
@@ -53,10 +63,49 @@ public class App {
 		// testProcessMetadataService("aa");
 
 		testSkipping(2);
+		
+		testGrab();
+	}
+
+	private void testGrab() {
+		String processInstanceId = "";
+
+		try {
+			IBPMServiceClient bpmServiceClient = Fixture.getBPMServiceClient();
+
+			IInstanceManagementService instanceManagementService = bpmServiceClient
+					.getInstanceManagementService();
+
+			IBPMContext bpmContext = Fixture.getIBPMContext(
+					ConnectionConstants.USERNAME, ConnectionConstants.PASSWORD);
+
+			IInstanceQueryService queryService = Fixture.getBPMServiceClient()
+					.getInstanceQueryService();
+
+			IProcessInstance processInstance = queryService.getProcessInstance(
+					bpmContext, processInstanceId);
+
+			IGrabInstanceRequest grabInstanceRequest = new GrabInstanceRequest();
+			grabInstanceRequest.setProcessInstance(processInstance);
+			// change flow
+
+			IActivityInfo sourceActivity = ActivityInfo.create("UserTask", "");
+			IActivityInfo targetActivity = ActivityInfo.create("UserTask1", "");
+			IFlowChangeItem flowChangeItem = FlowChangeItem.create(
+					sourceActivity, targetActivity);
+			List<IFlowChangeItem> items = new ArrayList<IFlowChangeItem>();
+			items.add(flowChangeItem);
+			grabInstanceRequest.setRequestedFlowChanges(items);
+
+			IGrabInstanceResponse grabInstance = instanceManagementService
+					.grabInstance(bpmContext, grabInstanceRequest);
+
+		} catch (Exception ex) {
+			System.out.println("error!");
+		}
 	}
 
 	private void testSkipping(int taskNumber) {
-		final int taskNo = 200380;
 
 		try {
 			// Create JAVA WorflowServiceClient
